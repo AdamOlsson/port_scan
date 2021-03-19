@@ -1,18 +1,19 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
+#include <assert.h>
 
-static void
-scan(char* ip, char* port_range[])
+
+static struct addrinfo*
+addrinfo_create(char* ip, char* port)
 {
-    printf("%s:[%s, %s]\n", ip, port_range[0], port_range[1]);
-
     struct addrinfo hints;
-    
     memset(&hints, 0, sizeof(hints));
+
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_flags = AI_PASSIVE;
@@ -21,12 +22,47 @@ scan(char* ip, char* port_range[])
     hints.ai_addr = NULL;
     hints.ai_next = NULL;
 
-    int res;
-    struct addrinfo** serv_addr;
-    if((res = getaddrinfo(ip, port_range[0], &hints, serv_addr)) != 0) {
-        printf("Error: Server address creation failed with exit code %d.\n", res);
+    struct addrinfo* addrs;
+    assert(getaddrinfo(ip, port, &hints, &addrs) == 0);
+
+    return addrs;
+}
+
+static void
+addrinfo_destroy(struct addrinfo* addr)
+{
+    freeaddrinfo(addr);
+}
+
+static void
+probe()
+{}
+
+static void
+scan(char* ip, char* port_range[])
+{
+    printf("%s:[%s, %s]\n", ip, port_range[0], port_range[1]);
+
+    struct addrinfo* serv_addr = addrinfo_create(ip, port_range[0]);
+
+    struct addrinfo* addr;
+    for (addr = serv_addr; addr != NULL; addr = addr->ai_next) {
+        int sfd = socket(addr->ai_family, addr->ai_socktype, addr->ai_protocol);
+        if (sfd == -1) {
+            continue;
+        }
+
+        if (connect(sfd, addr->ai_addr, addr->ai_addrlen) == 0) {
+            printf("Port %s is open.\n", port_range[0]);
+        } else {
+            printf("Port %s NOT is open.\n", port_range[0]);
+
+        }
+
+        close(sfd);
     }
 
+    addrinfo_destroy(serv_addr);
 }
 
 
@@ -34,9 +70,8 @@ int
 main(int argc, char *argv[])
 {   
     if (argc < 4) {
-        printf("Please provide an ipv4 address and port range.\n");
-        printf("Example: ./scan 192.168.1.1 100 200\n");
-        exit(1);
+        fprintf(stderr, "Please provide an ipv4 address and port range.\nExample: ./scan 192.168.1.1 100 200\n");
+        exit(EXIT_FAILURE);
     }
 
     char* target_ip = strdup(argv[1]);
