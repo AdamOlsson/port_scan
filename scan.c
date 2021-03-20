@@ -7,7 +7,6 @@
 #include <netdb.h>
 #include <assert.h>
 
-
 static struct addrinfo*
 addrinfo_create(char* ip, char* port)
 {
