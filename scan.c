@@ -8,6 +8,7 @@
 #include <assert.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <arpa/inet.h>
 
 static struct addrinfo*
 addrinfo_create(char* ip, char* port)
@@ -36,7 +37,7 @@ addrinfo_destroy(struct addrinfo* addr)
 }
 
 static void
-probe(struct addrinfo* addr, char* port)
+probe(struct addrinfo* addr)
 {
     struct timeval timeout;
     timeout.tv_sec = 10;
@@ -63,21 +64,23 @@ probe(struct addrinfo* addr, char* port)
     int res = connect(sfd, addr->ai_addr, addr->ai_addrlen);
     if (res == -1) {
         if (errno == EINPROGRESS) {
-            fprintf(stderr, "Trying to connect...\n");
+            struct sockaddr_in *addr_in = (struct sockaddr_in *)addr->ai_addr;
+            //fprintf(stderr, "Probing %s:%u...\n", inet_ntoa((struct in_addr)addr_in->sin_addr), (unsigned int)addr_in->sin_port);
 
             fd_set setp;
             FD_ZERO(&setp); 
             FD_SET(sfd, &setp);
             res = select(sfd+1, NULL, &setp, NULL, &timeout);
+            
             if (res < 0 && errno != EINTR) { 
                 fprintf(stderr, "Error connecting %d - %s\n", errno, strerror(errno)); 
                 exit(0); 
             } else if(res > 0) {
                 /* Connected */
-                fprintf(stderr, "Port %s is open.\n", port);
+                //fprintf(stderr, "Port %s is open.\n", port);
             } else {
                 /* Timeout */
-                fprintf(stderr, "Port %s NOT is open.\n", port);
+                //fprintf(stderr, "Port %s NOT is open.\n", port);
             }
         } else {
             fprintf(stderr, "Error connecting.\n");
@@ -92,19 +95,26 @@ scan(char* ip, char* port_range[])
 {
     fprintf(stderr, "%s:[%s, %s]\n", ip, port_range[0], port_range[1]);
 
-    struct addrinfo* serv_addr = addrinfo_create(ip, port_range[0]);
     /* TODO:
-        Iterate over ports
+        Fix the printing
         Test on an open port
         Perform partial TCP connection
         Make efficient on large amount of ports, parallellize?
     */
-    struct addrinfo* addr;
-    for (addr = serv_addr; addr != NULL; addr = addr->ai_next) {
-        probe(addr, port_range[0]);
-    }
+    
+    char port_str[16];
+    for(int port = atoi(port_range[0]); port <= atoi(port_range[1]); port++){
+        
+        sprintf(port_str, "%d", port);
 
-    addrinfo_destroy(serv_addr);
+        struct addrinfo* serv_addr = addrinfo_create(ip, port_str);
+        
+        struct addrinfo* addr;
+        for (addr = serv_addr; addr != NULL; addr = addr->ai_next) {
+            probe(addr);
+        }
+        addrinfo_destroy(serv_addr);
+    }
 }
 
 
