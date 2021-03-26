@@ -40,7 +40,7 @@ static void
 probe(struct addrinfo* addr)
 {
     struct timeval timeout;
-    timeout.tv_sec = 10;
+    timeout.tv_sec = 2;
     timeout.tv_usec = 0;
 
     int sfd = socket(addr->ai_family, addr->ai_socktype, addr->ai_protocol);
@@ -58,34 +58,47 @@ probe(struct addrinfo* addr)
     flags |= O_NONBLOCK; 
     if(fcntl(sfd, F_SETFL, flags) < 0) { 
         fprintf(stderr, "Error setting socket flags.\n"); 
-        exit(0); 
+        exit(0);
     } 
 
     int res = connect(sfd, addr->ai_addr, addr->ai_addrlen);
     if (res == -1) {
-        if (errno == EINPROGRESS) {
-            struct sockaddr_in *addr_in = (struct sockaddr_in *)addr->ai_addr;
-            //fprintf(stderr, "Probing %s:%u...\n", inet_ntoa((struct in_addr)addr_in->sin_addr), (unsigned int)addr_in->sin_port);
+        struct sockaddr_in *addr_in = (struct sockaddr_in *)addr->ai_addr;
+        uint16_t port = ntohs(addr_in->sin_port);
+        char* addr_str = inet_ntoa((struct in_addr)addr_in->sin_addr);
 
+        if (errno == EINPROGRESS) {
             fd_set setp;
             FD_ZERO(&setp); 
             FD_SET(sfd, &setp);
             res = select(sfd+1, NULL, &setp, NULL, &timeout);
             
             if (res < 0 && errno != EINTR) { 
-                fprintf(stderr, "Error connecting %d - %s\n", errno, strerror(errno)); 
+                fprintf(stderr, "ERROR %d - %s\n", errno, strerror(errno)); 
                 exit(0); 
             } else if(res > 0) {
                 /* Connected */
-                //fprintf(stderr, "Port %s is open.\n", port);
+                fprintf(stderr, "Found open port %s:%u\n", addr_str, port);
             } else {
                 /* Timeout */
-                //fprintf(stderr, "Port %s NOT is open.\n", port);
+                // fprintf(stderr, "NOT OPEN.\n");
             }
         } else {
-            fprintf(stderr, "Error connecting.\n");
+            fprintf(stderr, "Error connecting to %s:%u - Reason:\n%d - %s", addr_str, port, errno, strerror(errno));
         }
     }
+
+    // Set to blocking mode again... 
+    if((flags = fcntl(sfd, F_GETFL, NULL)) < 0) { 
+        fprintf(stderr, "Error fcntl(..., F_GETFL) (%s)\n", strerror(errno)); 
+        exit(0); 
+    }
+
+    flags &= (~O_NONBLOCK); 
+    if(fcntl(sfd, F_SETFL, flags) < 0) { 
+        fprintf(stderr, "Error fcntl(..., F_SETFL) (%s)\n", strerror(errno)); 
+        exit(0); 
+    } 
 
     close(sfd);
 }
@@ -96,10 +109,9 @@ scan(char* ip, char* port_range[])
     fprintf(stderr, "%s:[%s, %s]\n", ip, port_range[0], port_range[1]);
 
     /* TODO:
-        Fix the printing
-        Test on an open port
+        Make efficient on large amount of ports
+        Allow for IPv6
         Perform partial TCP connection
-        Make efficient on large amount of ports, parallellize?
     */
     
     char port_str[16];
@@ -116,7 +128,6 @@ scan(char* ip, char* port_range[])
         addrinfo_destroy(serv_addr);
     }
 }
-
 
 int
 main(int argc, char *argv[])
